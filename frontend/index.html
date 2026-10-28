@@ -1,0 +1,68 @@
+@'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FestPass Registration</title>
+</head>
+<body>
+    <h1>FestPass Registration</h1>
+    <h2>Backend Health</h2>
+    <button onclick="checkHealth()">Check API Health</button>
+    <pre id="health">Loading...</pre>
+
+    <h2>Register for an Event</h2>
+    <form id="registrationForm">
+        <input id="name" placeholder="Your name" required>
+        <input id="event" placeholder="Event name" required>
+        <button type="submit">Register</button>
+    </form>
+
+    <h2>Registrations</h2>
+    <button onclick="loadRegistrations()">Refresh Registrations</button>
+    <pre id="registrations"></pre>
+
+    <script>
+        async function checkHealth() {
+            const response = await fetch("/api/health");
+            const data = await response.json();
+            document.getElementById("health").textContent =
+                JSON.stringify(data, null, 2);
+        }
+
+        async function loadRegistrations() {
+            const response = await fetch("/api/registrations");
+            const data = await response.json();
+            document.getElementById("registrations").textContent =
+                JSON.stringify(data, null, 2);
+        }
+
+        document.getElementById("registrationForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const response = await fetch("/api/registrations", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    name: document.getElementById("name").value,
+                    event: document.getElementById("event").value
+                })
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                alert(data.error || "Registration failed");
+                return;
+            }
+
+            alert("Registration successful!");
+            e.target.reset();
+            loadRegistrations();
+        });
+
+        checkHealth();
+        loadRegistrations();
+    </script>
+</body>
+</html>
+'@ | Set-Content .\frontend\index.html -Encoding utf8

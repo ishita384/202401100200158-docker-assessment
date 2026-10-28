@@ -1,0 +1,101 @@
+
+"""FestPass registration API."""
+import os
+import socket
+from contextlib import closing
+
+import psycopg2
+from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+
+REGNO = os.getenv("REGNO", "NOT-SET")
+APP_VERSION = os.getenv("APP_VERSION", "dev")
+
+
+def connect():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        dbname=os.getenv("DB_NAME", "festpass"),
+        user=os.getenv("DB_USER", "festpass"),
+        password=os.getenv("DB_PASSWORD", ""),
+        connect_timeout=3,
+    )
+
+
+def run_sql(sql, params=(), fetch=False):
+    with closing(connect()) as conn:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS registrations (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        event TEXT NOT NULL,
+                        created TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """)
+                cur.execute(sql, params)
+                return cur.fetchall() if fetch else None
+
+
+@app.errorhandler(psycopg2.Error)
+def database_error(err):
+    return jsonify(error="database unavailable"), 503
+
+
+@app.get("/api/health")
+def health():
+    try:
+        with closing(connect()) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        database = True
+    except psycopg2.Error:
+        database = False
+
+    return jsonify(
+        service="festpass-backend",
+        regno=REGNO,
+        version=APP_VERSION,
+        container=socket.gethostname(),
+        database=database,
+    )
+
+
+@app.get("/api/registrations")
+def list_registrations():
+    rows = run_sql(
+        "SELECT id, name, event, created FROM registrations ORDER BY id",
+        fetch=True,
+    )
+    return jsonify([
+        {
+            "id": i,
+            "name": n,
+            "event": e,
+            "created": c.isoformat(timespec="seconds"),
+        }
+        for i, n, e, c in rows
+    ])
+
+
+@app.post("/api/registrations")
+def add_registration():
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name", "")).strip()
+    event = str(data.get("event", "")).strip()
+
+    if not name or not event:
+        return jsonify(error="name and event are required"), 400
+
+    result = run_sql(
+        "INSERT INTO registrations (name, event) VALUES (%s, %s) RETURNING id",
+        (name, event),
+        fetch=True,
+    )
+    return jsonify(id=result[0][0], name=name, event=event), 201
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
